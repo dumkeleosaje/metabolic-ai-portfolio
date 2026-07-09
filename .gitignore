@@ -216,3 +216,23 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ==========================================
+# CUSTOM METABOLIC AI & DATA SCIENCE RULES
+# ==========================================
+
+# Data files (too large for GitHub, keep local)
+data/
+*.csv
+*.gz
+*.h5
+*.pkl
+
+# PyTorch Models (avoid pushing massive weights)
+models/
+*.pt
+*.pth
+
+# OS junk files (Mac/Windows hidden files)
+.DS_Store
+Thumbs.db
