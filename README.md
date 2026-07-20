@@ -1,7 +1,7 @@
 # Metabolic AI Portfolio
 
 > Computational investigation of chronic hyperinsulinaemia as a unified 
-> upstream driver of metabolic disease — built summer 2026.
+> upstream driver of metabolic disease.
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0-orange?logo=pytorch)](https://pytorch.org)
