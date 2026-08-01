@@ -236,3 +236,9 @@ models/
 # OS junk files (Mac/Windows hidden files)
 .DS_Store
 Thumbs.db
+
+# Ignore raw data files in all data directories
+**/data/*.txt
+**/data/*.txt.gz
+**/data/*.csv
+**/data/*.xml
