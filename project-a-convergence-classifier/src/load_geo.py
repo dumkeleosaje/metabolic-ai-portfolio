@@ -7,18 +7,15 @@ def parse_metadata(file_path):
     #CREATE an empty list for disease labels
     disease_labels = []
 
-    #open the file for reading
-    file = open(file_path, "r")
-
-    #read lines into a list 
-    lines = file.readlines()
-    file.close
+    #open the file for reading using a with block for automatic closing
+    with open(file_path, "r") as file:
+        lines = file.readlines()
 
     #FOR each line in the file:
     for line in lines:
         
-        #stop if we hit the data table
-        if line.startswith ("series_matrix_table_begin"):
+        #stop if we hit the data table (Fixed bug: added missing '!')
+        if line.startswith("!series_matrix_table_begin"):
             break 
 
         #IF the line does not start with "!":
@@ -27,7 +24,7 @@ def parse_metadata(file_path):
             #SKIP it (we only want metadata in this pass)
 
         #IF the line starts with the sample-accession marker:
-        if line.startswith ("!Sample_geo_accession"):    
+        if line.startswith("!Sample_geo_accession"):    
             #SPLIT the line on tabs
             parts = line.split("\t")
             raw_ids = parts[1:]
@@ -39,9 +36,9 @@ def parse_metadata(file_path):
                 sample_ids.append(clean_ids)
 
         #IF the line starts with the sample-characteristics marker:
-        if line.startswith ("!Sample_characteristics_ch1") and "glycemiagroup:" in line:
+        if line.startswith("!Sample_characteristics_ch1") and "glycemiagroup:" in line:
             parts = line.split("\t") #split by tabs
-            raw_labels = parts [1:]
+            raw_labels = parts[1:]
             #SPLIT the line on tabs
             #DISCARD the first element
             
@@ -67,7 +64,7 @@ def parse_metadata(file_path):
     if len(sample_ids) != len(disease_labels):
     #IF they don't:
         #RAISE an error with a clear message
-        raise ValueError ("Error: Number of sample IDs does not match number of disease labels")
+        raise ValueError("Error: Number of sample IDs does not match number of disease labels")
 
     patient_map = {}
     for i in range(len(sample_ids)):
@@ -94,10 +91,10 @@ def parse_matrix(file_path):
 #USE pandas to read the file as tab-separated text
         #TELL it to treat lines starting with "!" as comments
         #TELL it to use the first column as the row index
-    df = pd.read_csv(file_path, sep ="\t", comment = "!", index_col=0)
+    df = pd.read_csv(file_path, sep="\t", comment="!", index_col=0)
 
     #remove surrounding quotes and spaces from column names 
-    df.columns = [col.strip().strip(' "').strip() for col in df.columns]
+    df.columns = [col.strip().strip('"').strip() for col in df.columns]
 
     #return the DataFrame
     return df
@@ -122,7 +119,16 @@ def load_dataset(file_path):
     df_matrix = parse_matrix(file_path)
 
     #Convert metadata dictionary into a Pandas Series 
-    labels_series = pd.Series (metadata_map, name="disease_group")
+    labels_series = pd.Series(metadata_map, name="disease_group")
+
+    # Explicit Validation Step: ensure sample counts and order match
+    if len(labels_series) != df_matrix.shape[1]:
+        raise ValueError(f"Sample count mismatch: Metadata has {len(labels_series)} samples, Matrix has {df_matrix.shape[1]} columns.")
+
+    # Check for missing sample IDs in matrix columns
+    missing_samples = set(labels_series.index) - set(df_matrix.columns)
+    if missing_samples:
+        raise KeyError(f"The following metadata sample IDs are missing from expression matrix: {missing_samples}")
 
     df_matrix = df_matrix[labels_series.index]
 
