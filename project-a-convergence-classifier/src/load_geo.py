@@ -1,6 +1,7 @@
 import pandas as pd
+import numpy as np
 
-def parse_metadata(file_path):
+def parse_metadata(file_path, target_keyword="glycemiagroup"):
 
     #CREATE an empty list for sample IDs
     sample_ids = []
@@ -36,7 +37,7 @@ def parse_metadata(file_path):
                 sample_ids.append(clean_ids)
 
         #IF the line starts with the sample-characteristics marker:
-        if line.startswith("!Sample_characteristics_ch1") and "glycemiagroup:" in line:
+        if line.startswith("!Sample_characteristics_ch1") and target_keyword in line:
             parts = line.split("\t") #split by tabs
             raw_labels = parts[1:]
             #SPLIT the line on tabs
@@ -64,17 +65,20 @@ def parse_metadata(file_path):
     if len(sample_ids) != len(disease_labels):
     #IF they don't:
         #RAISE an error with a clear message
-        raise ValueError("Error: Number of sample IDs does not match number of disease labels")
+        raise ValueError(f"Error: Number of sample IDs ({len(sample_ids)}) does not match number of disease labels ({len(disease_labels)}) for keyword '{target_keyword}'")
 
     patient_map = {}
     for i in range(len(sample_ids)):
         raw = disease_labels[i]
-        if raw == "1":
-            label = "NGT"
-        elif raw == "2":
-            label = "IGT"
-        elif raw == "3":
-            label = "DM"
+        if target_keyword == "glycemiagroup":
+            if raw == "1":
+                label = "NGT"
+            elif raw == "2":
+                label = "IGT"
+            elif raw == "3":
+                label = "DM"
+            else:
+                label = raw
         else:
             label = raw
             
@@ -109,11 +113,11 @@ def parse_matrix(file_path):
 
     #PRINT the shape so you can see what you got
 
-def load_dataset(file_path):
+def load_dataset(file_path, target_keyword="glycemiagroup"):
     #Main loader function that parses both metadata and expression matrix
 
     #Get metadata mapping dictionary
-    metadata_map = parse_metadata(file_path)
+    metadata_map = parse_metadata(file_path, target_keyword=target_keyword)
 
     #Get expression DataFrame
     df_matrix = parse_matrix(file_path)
@@ -139,7 +143,7 @@ if __name__ == "__main__":
     test_file_path = "project-a-convergence-classifier/data/GSE18732_series_matrix.txt"
     
     print("Testing full pipeline via load_dataset()...")
-    X, y = load_dataset(test_file_path)
+    X, y = load_dataset(test_file_path, target_keyword="glycemiagroup")
     
     print("\n[SUCCESS] Loaded Dataset Summary:")
     print(f"Expression Matrix (X) Shape: {X.shape}")
