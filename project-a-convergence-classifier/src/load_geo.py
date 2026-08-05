@@ -8,8 +8,8 @@ def parse_metadata(file_path, target_keyword="glycemiagroup"):
     #CREATE an empty list for disease labels
     disease_labels = []
 
-    #open the file for reading using a with block for automatic closing
-    with open(file_path, "r") as file:
+    #open the file for reading using a with block for automatic closing with utf-8 encoding guard
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as file:
         lines = file.readlines()
 
     #FOR each line in the file:
@@ -29,43 +29,58 @@ def parse_metadata(file_path, target_keyword="glycemiagroup"):
             #SPLIT the line on tabs
             parts = line.split("\t")
             raw_ids = parts[1:]
-            #DISCARD the first element (it's the marker itself)
-            #STRIP surrounding quotation marks from each remaining element
-            #STORE these as the sample IDs
             for item in raw_ids:
                 clean_ids = item.strip().strip('"').strip()
                 sample_ids.append(clean_ids)
 
+        # Handle GSE10946 title-based parsing (PCOS vs nonPCOS in !Sample_title)
+        if (target_keyword.lower() in ["title", "pcos"]) and line.startswith("!Sample_title"):
+            parts = line.split("\t")[1:]
+            for item in parts:
+                clean_item = item.strip().strip('"').strip()
+                if "nonpcos" in clean_item.lower():
+                    disease_labels.append("Control")
+                elif "pcos" in clean_item.lower():
+                    disease_labels.append("PCOS")
+                else:
+                    disease_labels.append(clean_item)
+
         #IF the line starts with the sample-characteristics marker:
-        if line.startswith("!Sample_characteristics_ch1") and target_keyword in line:
+        elif line.startswith("!Sample_characteristics_ch1") and target_keyword.lower() in line.lower():
             parts = line.split("\t") #split by tabs
             raw_labels = parts[1:]
-            #SPLIT the line on tabs
-            #DISCARD the first element
             
             for item in raw_labels:
                 clean_item = item.strip().strip('"').strip()
                 
+                # Handle comma-separated single lines (e.g. GSE10946)
+                if "," in clean_item and target_keyword.lower() in clean_item.lower():
+                    sub_parts = clean_item.split(",")
+                    found_val = clean_item
+                    for sp in sub_parts:
+                        if target_keyword.lower() in sp.lower():
+                            found_val = sp.strip()
+                            break
+                    clean_item = found_val
+
                 if ":" in clean_item:
                     label_value = clean_item.split(":")[-1].strip()
                 else:
                     label_value = clean_item
 
                 disease_labels.append(label_value)
-                #STRIP quotes
-                #STRIP the prefix before the colon, keeping only the value
-                #STORE these as the disease labels
-            #IF no:
-                #SKIP — this characteristics line is age or sex, not disease
-
-        #IF the line marks the start of the matrix:
-            #STOP reading — no more metadata below this point
 
     #CHECK that sample IDs and disease labels have the same length
     if len(sample_ids) != len(disease_labels):
-    #IF they don't:
-        #RAISE an error with a clear message
         raise ValueError(f"Error: Number of sample IDs ({len(sample_ids)}) does not match number of disease labels ({len(disease_labels)}) for keyword '{target_keyword}'")
+
+    # Guard against single-class constant label assignment
+    unique_labels = set(disease_labels)
+    if len(unique_labels) <= 1:
+        raise ValueError(
+            f"CRITICAL LABEL ERROR: Target keyword '{target_keyword}' produced a single unique value ({unique_labels}). "
+            f"Classification targets must contain at least two classes!"
+        )
 
     patient_map = {}
     for i in range(len(sample_ids)):
@@ -86,35 +101,14 @@ def parse_metadata(file_path, target_keyword="glycemiagroup"):
         
     return patient_map
 
-    #BUILD a mapping from each sample ID to its disease label
-    #RETURN that mapping
-
 
 def parse_matrix(file_path):
-
-#USE pandas to read the file as tab-separated text
-        #TELL it to treat lines starting with "!" as comments
-        #TELL it to use the first column as the row index
-    df = pd.read_csv(file_path, sep="\t", comment="!", index_col=0)
-
-    #remove surrounding quotes and spaces from column names 
+    df = pd.read_csv(file_path, sep="\t", comment="!", index_col=0, encoding="utf-8")
     df.columns = [col.strip().strip('"').strip() for col in df.columns]
-
-    #return the DataFrame
     return df
     
 
-    #CHECK the result:
-        #Is the last row junk (from the table-end marker)?
-        #IF so, remove it
-
-    #CHECK that all values are numeric
-        #IF any column is text, something has gone wrong — investigate
-
-    #PRINT the shape so you can see what you got
-
-def load_dataset(file_path, target_keyword="glycemiagroup"):
-    #Main loader function that parses both metadata and expression matrix
+def load_dataset(file_path, target_keyword="characteristics_ch1"):
 
     #Get metadata mapping dictionary
     metadata_map = parse_metadata(file_path, target_keyword=target_keyword)
