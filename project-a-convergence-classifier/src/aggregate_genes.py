@@ -57,8 +57,8 @@ if __name__ == "__main__":
     X_genes_unscaled = aggregate_enst_to_gene(X_log2, mapping_path)
 
     # Standardise per-sample AFTER aggregation on the final gene feature space
-    print("\n[STEP 4] Standardising aggregated gene matrix per sample...")
-    X_genes = standardise_per_sample(X_genes_unscaled)
+    print("\n[STEP 3] Standardising aggregated gene matrix per sample...")
+    X_genes = standardise_per_sample(X_genes_unscaled, step_label="STEP 3")
 
     print("\n=== FINAL AGGREGATED FEATURE MATRIX ===")
     print(f"Shape (Genes x Patients): {X_genes.shape}")

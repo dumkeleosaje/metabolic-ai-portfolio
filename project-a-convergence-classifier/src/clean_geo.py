@@ -37,7 +37,7 @@ def apply_log2_transform(df_matrix, prelog_threshold=20.0):
     return df_log2
 
 
-def standardise_per_sample(df_matrix):
+def standardise_per_sample(df_matrix, step_label="STEP 3"):
     #Perform per-sample standardisation to remove chip-level bias 
 
     # Column-wise mean and std (pandas ddof=1)
@@ -50,7 +50,7 @@ def standardise_per_sample(df_matrix):
     sample_mean_after = df_std.mean(axis=0)
     sample_std_after = df_std.std(axis=0)
 
-    print(f"[STEP 3] Per-Sample Standardization Complete. Shape: {df_std.shape}")
+    print(f"[{step_label}] Per-Sample Standardization Complete. Shape: {df_std.shape}")
 
     # TEST: Dataset-agnostic validation (all per-sample means ≈ 0 and stds ≈ 1)
     means_valid = np.allclose(sample_mean_after, 0.0, atol=1e-5)
@@ -70,7 +70,7 @@ def clean_expression_matrix(df_matrix, control_prefix="AFFX-", prelog_threshold=
     df_step2 = apply_log2_transform(df_step1, prelog_threshold=prelog_threshold)
 
     if standardise:
-        df_out = standardise_per_sample(df_step2)
+        df_out = standardise_per_sample(df_step2, step_label="STEP 3")
     else:
         df_out = df_step2
     print("=== DATA CLEANING PIPELINE COMPLETE ===\n")
