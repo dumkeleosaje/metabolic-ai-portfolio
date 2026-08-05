@@ -63,25 +63,23 @@ def standardise_per_sample(df_matrix):
     return df_std
 
 
-def clean_expression_matrix(df_matrix, control_prefix="AFFX-", prelog_threshold=20.0):
+def clean_expression_matrix(df_matrix, control_prefix="AFFX-", prelog_threshold=20.0, standardise=False):
     #reusable code for control probe filtering, adaptive log2 transform, and per-sample standardization."""
     print("=== STARTING DATA CLEANING PIPELINE ===")
     df_step1 = drop_control_probes(df_matrix, control_prefix=control_prefix)
     df_step2 = apply_log2_transform(df_step1, prelog_threshold=prelog_threshold)
-    df_step3 = standardise_per_sample(df_step2)
+
+    if standardise:
+        df_out = standardise_per_sample(df_step2)
+    else:
+        df_out = df_step2
     print("=== DATA CLEANING PIPELINE COMPLETE ===\n")
-    return df_step3
+    return df_out
 
 
 if __name__ == "__main__":
     test_file_path = "project-a-convergence-classifier/data/GSE18732_series_matrix.txt"
 
-    print("Loading raw GSE18732 dataset for reusable cleaning verification...")
+    print("Testing clean_geo standalone...")
     X_raw, y = load_dataset(test_file_path)
-
-    # Run generalized cleaning pipeline
-    X_clean = clean_expression_matrix(X_raw, control_prefix="AFFX-")
-
-    print("=== SUMMARY OF CLEANED DATA ===")
-    print(f"Cleaned Feature Matrix (X_clean) Shape: {X_clean.shape}")
-    print(f"Total Missing Values (NaN):             {X_clean.isnull().sum().sum()}")
+    X_clean = clean_expression_matrix(X_raw, control_prefix="AFFX-", standardise=True)
