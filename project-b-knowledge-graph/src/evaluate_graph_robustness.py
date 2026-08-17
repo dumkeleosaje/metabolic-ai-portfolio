@@ -3,15 +3,14 @@ import random
 from collections import defaultdict
 import networkx as nx
 from scipy.stats import spearmanr
-from build_graph import canonicalize_entity, classify_sentence_relationship
+from build_graph import canonicalize_entity, classify_scoped_relationship
 
 
-def run_subsample_graph_pipeline(pair_records, pmid_subset, min_paper_evidence=2):
-    """Rebuilds a knowledge graph using only a subset of PMIDs."""
+def run_subsample_graph_pipeline(pair_records, pmid_subset, min_paper_evidence=3):
+    """Rebuilds a knowledge graph using only a subset of PMIDs with scoped logic."""
     pair_evidence = defaultdict(lambda: {"pmids": set(), "act_count": 0, "inh_count": 0})
     
     for rec in pair_records:
-        # Keep only pairs originating from the subsampled PMIDs
         if rec["pmid"] not in pmid_subset:
             continue
             
@@ -21,11 +20,18 @@ def run_subsample_graph_pipeline(pair_records, pmid_subset, min_paper_evidence=2
             continue
             
         pair_key = tuple(sorted([ent_a, ent_b]))
-        rel = classify_sentence_relationship(rec["evidence_sentence"])
+        sent = rec["evidence_sentence"]
+        span_a = rec.get("span_a", [0, len(ent_a)])
+        span_b = rec.get("span_b", [0, len(ent_b)])
+        
+        rel = classify_scoped_relationship(sent, span_a, span_b)
         
         if rel == "ACTIVATING":
             pair_evidence[pair_key]["act_count"] += 1
         elif rel == "INHIBITING":
+            pair_evidence[pair_key]["inh_count"] += 1
+        elif rel == "MIXED":
+            pair_evidence[pair_key]["act_count"] += 1
             pair_evidence[pair_key]["inh_count"] += 1
             
         pair_evidence[pair_key]["pmids"].add(rec["pmid"])
@@ -64,7 +70,7 @@ def run_subsample_graph_pipeline(pair_records, pmid_subset, min_paper_evidence=2
 def evaluate_graph_robustness():
     print("\n==================================================")
     print("=== KNOWLEDGE GRAPH STABILITY & ROBUSTNESS ===")
-    print("=== (FULL N=295 vs 50% SUBSAMPLE N=150) ===")
+    print("=== (CLEANED FULL N=295 vs 50% SUBSAMPLE N=150) ===")
     print("==================================================")
     
     pairs_path = "project-b-knowledge-graph/data/extracted_entity_pairs.json"
@@ -74,28 +80,27 @@ def evaluate_graph_robustness():
     all_pmids = list(set(rec["pmid"] for rec in all_pairs))
     print(f"Total Unique PMIDs in Full Dataset: {len(all_pmids)}")
     
-    # 1. Build Full Graph (N=295)
-    G_full = run_subsample_graph_pipeline(all_pairs, set(all_pmids), min_paper_evidence=2)
+    # 1. Full Cleaned Graph (>= 3 papers)
+    G_full = run_subsample_graph_pipeline(all_pairs, set(all_pmids), min_paper_evidence=3)
     deg_full = dict(G_full.degree(weight="weight"))
     top10_full = [node for node, _ in sorted(deg_full.items(), key=lambda x: x[1], reverse=True)[:10]]
     
-    # 2. Build 50% Subsampled Graph (N=150)
+    # 2. 50% Subsampled Graph (>= 3 papers)
     random.seed(42)
     subsample_pmids = set(random.sample(all_pmids, 150))
-    G_half = run_subsample_graph_pipeline(all_pairs, subsample_pmids, min_paper_evidence=2)
+    G_half = run_subsample_graph_pipeline(all_pairs, subsample_pmids, min_paper_evidence=3)
     deg_half = dict(G_half.degree(weight="weight"))
     top10_half = [node for node, _ in sorted(deg_half.items(), key=lambda x: x[1], reverse=True)[:10]]
     
-    # 3. Calculate Stability Metrics
+    # 3. Stability Metrics
     jaccard_hubs = len(set(top10_full) & set(top10_half)) / len(set(top10_full) | set(top10_half))
     
-    # Rank correlation across shared nodes
     shared_nodes = list(set(G_full.nodes()) & set(G_half.nodes()))
     ranks_full = [deg_full[n] for n in shared_nodes]
     ranks_half = [deg_half[n] for n in shared_nodes]
     rho, p_val = spearmanr(ranks_full, ranks_half)
     
-    print("\n--- TOP 10 HUBS COMPARISON ---")
+    print("\n--- TOP 10 BIOLOGICAL HUBS COMPARISON ---")
     print(f"{'Rank':<5} | {'Full Dataset (N=295)':<25} | {'50% Subsample (N=150)':<25}")
     print("-" * 60)
     for r in range(10):
@@ -107,7 +112,6 @@ def evaluate_graph_robustness():
     print(f"Top 10 Hub Jaccard Overlap:        {jaccard_hubs*100:.1f}%")
     print(f"Global Degree Spearman Rank Rho:   {rho:.3f} (p = {p_val:.4e})")
     
-    # 4. Check if top contested edge survived
     top_contested_survived = G_half.has_edge("autophagy", "senescence") and \
                              G_half["autophagy"]["senescence"]["classification"] == "CONTESTED"
     print(f"Primary Contested Edge ('autophagy' <-> 'senescence') Retained: {top_contested_survived}")

@@ -4,7 +4,7 @@ import re
 from collections import defaultdict
 import networkx as nx
 
-# Expanded synonym dictionary to standardise entity naming
+# Central Synonym Mapping (Single Source of Truth)
 SYNONYM_MAP = {
     "cellular senescence": "senescence",
     "senescent cells": "senescence",
@@ -12,10 +12,10 @@ SYNONYM_MAP = {
     "cell senescence": "senescence",
     "macroautophagy": "autophagy",
     "autophagic flux": "autophagy",
-    "autophagic": "autophagy"
+    "autophagic": "autophagy",
+    "senescence-associated secretory phenotype": "sasp"
 }
 
-# Regex patterns for activating and inhibiting relationships
 ACTIVATING_KEYWORDS = [
     r"\bactivat\w*", r"\bpromot\w*", r"\binduc\w*", r"\bincreas\w*",
     r"\bstimulat\w*", r"\benhanc\w*", r"\bupregulat\w*", r"\btrigger\w*"
@@ -25,9 +25,7 @@ INHIBITING_KEYWORDS = [
     r"\bdecreas\w*", r"\battenuat\w*", r"\bdownregulat\w*", r"\breduc\w*", r"\brevers\w*"
 ]
 
-NEGATION_PATTERN = re.compile(r"\b(not|never|no|failed to|unable to|without)\b", re.IGNORECASE)
-HEDGING_PATTERN = re.compile(r"\b(may|might|could|potentially|suggests|hypothesized)\b", re.IGNORECASE)
-
+NEGATION_PATTERN = re.compile(r"\b(does not|failed to|did not|unable to|without|no significant)\b", re.IGNORECASE)
 ACT_PATTERN = re.compile("|".join(ACTIVATING_KEYWORDS), re.IGNORECASE)
 INH_PATTERN = re.compile("|".join(INHIBITING_KEYWORDS), re.IGNORECASE)
 
@@ -43,17 +41,14 @@ def canonicalize_entity(ent):
 def classify_scoped_relationship(sentence, span_a, span_b):
     """
     Classifies relationship strictly within the text span between entity_a and entity_b.
-    Prevents whole-sentence crosstalk and handles negation.
+    Returns: 'ACTIVATING', 'INHIBITING', 'MIXED', or 'NEUTRAL'
     """
-    # Determine start and end of the text between the two entities
     first_end = min(span_a[1], span_b[1])
     second_start = max(span_a[0], span_b[0])
     
-    # Extract the text between entities (or a window of +/- 30 chars if adjacent)
     if first_end < second_start:
         in_between_text = sentence[first_end:second_start]
     else:
-        # If spans overlap or are adjacent, look at a local 40-char window
         start_win = max(0, min(span_a[0], span_b[0]) - 20)
         end_win = min(len(sentence), max(span_a[1], span_b[1]) + 20)
         in_between_text = sentence[start_win:end_win]
@@ -62,30 +57,26 @@ def classify_scoped_relationship(sentence, span_a, span_b):
     has_inh = bool(INH_PATTERN.search(in_between_text))
     is_negated = bool(NEGATION_PATTERN.search(in_between_text))
     
-    # Handle negation inversions (e.g., "does not activate" -> INHIBITING/NOT_ACT)
     if is_negated:
-        if has_act and not has_inh:
-            return "INHIBITING"
-        elif has_inh and not has_act:
-            return "ACTIVATING"
-            
-    if has_act and not has_inh:
-        return "ACTIVATING"
-    elif has_inh and not has_act:
-        return "INHIBITING"
-    elif has_act and has_inh:
+        return "NEUTRAL"
+        
+    if has_act and has_inh:
         return "MIXED"
+    elif has_act:
+        return "ACTIVATING"
+    elif has_inh:
+        return "INHIBITING"
         
     return "NEUTRAL"
 
 
 def build_knowledge_graph(min_paper_evidence=3):
     """
-    Builds a robust NetworkX graph using between-span verb scoping
-    and a higher confidence threshold (>= 3 papers).
+    Constructs a NetworkX graph requiring strict exclusive cross-paper disagreement
+    (papers exclusively on activating side AND papers exclusively on inhibiting side).
     """
     print("\n==================================================")
-    print("=== BUILDING KNOWLEDGE GRAPH (SCOPED VERB LOGIC) ===")
+    print(f"=== BUILDING KNOWLEDGE GRAPH (THRESHOLD >= {min_paper_evidence} PAPERS) ===")
     print("==================================================")
     
     input_pairs_path = "project-b-knowledge-graph/data/extracted_entity_pairs.json"
@@ -94,7 +85,13 @@ def build_knowledge_graph(min_paper_evidence=3):
         
     print(f"Loaded {len(pair_records)} filtered co-occurrence records.")
     
-    pair_evidence = defaultdict(lambda: {"sentences": [], "pmids": set(), "act_count": 0, "inh_count": 0})
+    pair_evidence = defaultdict(lambda: {
+        "all_pmids": set(),
+        "act_pmids": set(),
+        "inh_pmids": set(),
+        "mixed_pmids": set(),
+        "sentences": []
+    })
     
     for rec in pair_records:
         ent_a = canonicalize_entity(rec["entity_a"])
@@ -109,18 +106,18 @@ def build_knowledge_graph(min_paper_evidence=3):
         span_a = rec.get("span_a", [0, len(ent_a)])
         span_b = rec.get("span_b", [0, len(ent_b)])
         
-        # Apply Scoped Span Classification
         rel = classify_scoped_relationship(sent, span_a, span_b)
         
-        if rel == "ACTIVATING":
-            pair_evidence[pair_key]["act_count"] += 1
-        elif rel == "INHIBITING":
-            pair_evidence[pair_key]["inh_count"] += 1
-            
+        pair_evidence[pair_key]["all_pmids"].add(pmid)
         pair_evidence[pair_key]["sentences"].append(sent)
-        pair_evidence[pair_key]["pmids"].add(pmid)
+        
+        if rel == "ACTIVATING":
+            pair_evidence[pair_key]["act_pmids"].add(pmid)
+        elif rel == "INHIBITING":
+            pair_evidence[pair_key]["inh_pmids"].add(pmid)
+        elif rel == "MIXED":
+            pair_evidence[pair_key]["mixed_pmids"].add(pmid)
 
-    # Build NetworkX Graph
     G = nx.Graph()
     contested_count = 0
     activating_count = 0
@@ -128,22 +125,26 @@ def build_knowledge_graph(min_paper_evidence=3):
     neutral_count = 0
     
     for (node_u, node_v), data in pair_evidence.items():
-        paper_count = len(data["pmids"])
+        total_papers = len(data["all_pmids"])
         
-        # High confidence threshold: >= 3 papers
-        if paper_count < min_paper_evidence:
+        if total_papers < min_paper_evidence:
             continue
             
-        acts = data["act_count"]
-        inhs = data["inh_count"]
+        act_p = data["act_pmids"]
+        inh_p = data["inh_pmids"]
         
-        if acts > 0 and inhs > 0:
+        # Strict cross-paper dispute: at least one exclusive paper on each side
+        has_exclusive_act = len(act_p - inh_p) > 0
+        has_exclusive_inh = len(inh_p - act_p) > 0
+        is_strict_disagreement = has_exclusive_act and has_exclusive_inh
+        
+        if is_strict_disagreement:
             classification = "CONTESTED"
             contested_count += 1
-        elif acts > 0:
+        elif len(act_p) > 0 and len(inh_p) == 0:
             classification = "ACTIVATING"
             activating_count += 1
-        elif inhs > 0:
+        elif len(inh_p) > 0 and len(act_p) == 0:
             classification = "INHIBITING"
             inhibiting_count += 1
         else:
@@ -153,11 +154,12 @@ def build_knowledge_graph(min_paper_evidence=3):
         G.add_edge(
             node_u,
             node_v,
-            weight=paper_count,
+            weight=total_papers,
             classification=classification,
-            activating_signals=acts,
-            inhibiting_signals=inhs,
-            pmid_count=paper_count,
+            activating_papers=len(act_p),
+            inhibiting_papers=len(inh_p),
+            mixed_papers=len(data["mixed_pmids"]),
+            pmid_count=total_papers,
             evidence_sample=data["sentences"][0]
         )
 
@@ -168,10 +170,9 @@ def build_knowledge_graph(min_paper_evidence=3):
     print(f"\n[Edge Classification Breakdown]")
     print(f"  Activating Edges: {activating_count}")
     print(f"  Inhibiting Edges: {inhibiting_count}")
-    print(f"  CONTESTED Edges:  {contested_count} (Defensible Literature Disputes)")
-    print(f"  Neutral Edges:    {neutral_count}")
+    print(f"  CONTESTED Edges:  {contested_count} (Strict Cross-Paper Disputes)")
+    print(f"  Neutral / Nuanced: {neutral_count}")
 
-    # Top Central Hubs
     degree_dict = dict(G.degree(weight="weight"))
     sorted_hubs = sorted(degree_dict.items(), key=lambda x: x[1], reverse=True)[:10]
     

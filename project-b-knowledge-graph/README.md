@@ -305,3 +305,182 @@ The knowledge graph maps this cascade and identifies where the literature is mos
 - Laplante, M. & Sabatini, D.M. (2012). mTOR signaling in growth control and disease. *Cell*, 149(2), 274–293.
 
 ---
+
+# 🔬 Project B — Autophagy-Senescence Knowledge Graph
+
+> **Where does healthy cellular recycling transition into pathological senescent survival?**
+>
+> An NLP and graph analytics pipeline mining PubMed abstracts on the autophagy–cellular senescence axis. The system parses biomedical text, standardizes biological synonyms, extracts sentence-level co-occurrences with character span scoping, and classifies consensus versus contested molecular relationships across independent publications.
+
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![spaCy](https://img.shields.io/badge/spaCy-3.7-09A3D5?style=flat-square&logo=spacy&logoColor=white)](https://spacy.io)
+[![SciSpacy](https://img.shields.io/badge/SciSpacy-0.5.4-FF6F61?style=flat-square)](https://allenai.github.io/scispacy/)
+[![NetworkX](https://img.shields.io/badge/NetworkX-3.1-4B8BBE?style=flat-square)](https://networkx.org)
+[![Pyvis](https://img.shields.io/badge/Pyvis-0.3.2-4ade80?style=flat-square)](https://pyvis.readthedocs.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
+
+---
+
+## The Biological Context
+
+* **Autophagy** is the primary catabolic mechanism for degrading and recycling damaged organelles and long-lived proteins to maintain metabolic homeostasis.
+* **Cellular Senescence** is a permanent cell-cycle arrest triggered by sublethal cellular stress, characterized by the secretion of pro-inflammatory cytokines termed the **SASP** (Senescence-Associated Secretory Phenotype).
+* **The Literature Conflict:** Autophagy can act as a barrier against senescence by clearing damaged mitochondria, but it is also reported to be required for establishing senescence and sustaining metabolic viability in senescent states.
+
+This project extracts these relationships directly from peer-reviewed literature to map the network structure and identify specific disputed interactions.
+
+---
+
+---
+
+## Methods & Implementation
+
+### 1. Literature Ingestion & Tag Stripping
+* **Script:** `src/pubmed_fetch.py`
+* Programmatically retrieves abstracts via NCBI Entrez E-Utilities.
+* Regex filters strip embedded XML/HTML formatting tags (`<sup>`, `<i>`, `<b>`) before sentence segmentation to prevent broken sentence boundaries.
+
+### 2. Entity Extraction & Normalization
+* **Script:** `src/extract_entities.py`
+* Uses SciSpacy's `en_core_sci_sm` biomedical language model.
+* Filters non-biological noise (`review`, `human`, `target`, `damaged`, `western blotting`) and canonicalizes synonyms (`cellular senescence` → `senescence`, `senescence-associated secretory phenotype` → `sasp`).
+
+### 3. Scoped Edge Classification
+* **Script:** `src/build_graph.py`
+* **Between-Span Scoping:** Action verbs are evaluated strictly within the text substring separating the two entities, eliminating full-sentence crosstalk.
+* **Negation Handling:** Evaluates preceding negation phrases (`does not`, `failed to`, `without`) to prevent false-positive directional assignments.
+* **Distinct PMID Contestation:** An edge is classified as `CONTESTED` only when distinct publications exist exclusively on opposing sides:
+  $$\text{len}(\text{act\_pmids} - \text{inh\_pmids}) > 0 \quad \text{and} \quad \text{len}(\text{inh\_pmids} - \text{act\_pmids}) > 0$$
+
+### 4. Interactive Physics Visualisation
+* **Script:** `src/visualise_graph.py`
+* Generates an interactive ForceAtlas2 network map via PyVis. Edges are color-coded by evidence classification (🟢 Activating, 🔴 Inhibiting, 🟠 Contested) with node sizes weighted by degree centrality.
+
+### 5. Cross-Project Molecular Alignment
+* **Script:** `src/cross_project_connect.py`
+* Tests un-manipulated set intersection between the top 200 tissue-concordant genes from Project A and the literature-derived knowledge graph.
+
+---
+
+## Key Results & Graph Statistics
+
+### High-Confidence Graph Metrics ($\ge 3$ Papers)
+
+| Metric | Value | Description |
+| :--- | :---: | :--- |
+| **Abstracts Processed** | 295 | Queried via `autophagy AND senescence` |
+| **Filtered Entity Pairs** | 57,079 | Clean sentence-level co-occurrences |
+| **Graph Nodes (Entities)** | 456 | Biological entities with $\ge 3$ paper support |
+| **Graph Edges (Interactions)**| 745 | High-confidence interaction links |
+| **Activating Edges** | 201 | Consensus activating direction |
+| **Inhibiting Edges** | 122 | Consensus inhibiting direction |
+| **CONTESTED Edges** | **119** | **Strict exclusive cross-paper disputes** |
+| **Neutral / Nuanced Edges** | 303 | Co-occurrence without directional conflict |
+
+### Top 10 Central Biological Hubs
+
+| Rank | Biological Entity | Weighted Degree | Classification / Role |
+| :---: | :--- | :---: | :--- |
+| 1 | `senescence` | 1,784 | Core Query Hub |
+| 2 | `autophagy` | 1,706 | Core Query Hub |
+| 3 | `oxidative stress` | 80 | Cellular Stress Driver |
+| 4 | `rapamycin` | 73 | Pharmacological Autophagy Inducer |
+| 5 | `apoptosis` | 73 | Alternative Cell Death Pathway |
+| 6 | `sasp` | 66 | Senescent Secretory Phenotype |
+| 7 | `organelles` | 64 | Subcellular Degradation Targets |
+| 8 | `mtor` | 63 | Master Nutrient Sensor |
+| 9 | `p21` | 62 | Cell Cycle Arrest Effector |
+| 10 | `p53` | 56 | Master Tumor Suppressor / Stress Sensor |
+
+---
+
+### Top Disputed Literature Interactions
+
+Exemplar contradictory claims extracted directly from PubMed literature:
+
+**1. `SENESCENCE` $\leftrightarrow$ `AUTOPHAGY`** (108 Activating vs 74 Inhibiting Papers)
+* **[+] Activating Claim (PMID 31144309):** *"Autophagy is well known for its disruptive effect on human diseases, and it is currently proposed to have a direct effect on triggering senescence and quiescence."*
+* **[-] Inhibiting Claim (PMID 34706873):** *"Re-establishment of autophagy reversed the senescent phenotype by suppressing GATA4."*
+
+**2. `SENESCENCE` $\leftrightarrow$ `RAPAMYCIN`** (12 Activating vs 9 Inhibiting Papers)
+* **[+] Activating Claim (PMID 40702750):** *"We performed a narrative review of recent mechanistic and preclinical studies investigating... interactions between autophagy impairment and senescence; and (4) the efficacy of autophagy enhancers (e.g., rapamycin and metformin)..."*
+* **[-] Inhibiting Claim (PMID 39988732):** *"MTOR-dependent autophagy induced by rapamycin and torin-1 attenuated cell senescence and decreased the expression of cyclin-dependent kinase inhibitors..."*
+
+**3. `AUTOPHAGY` $\leftrightarrow$ `OXIDATIVE STRESS`** (11 Activating vs 7 Inhibiting Papers)
+* **[+] Activating Claim (PMID 36010550):** *"Further experiments revealed that autophagy was induced by artesunate treatment due to oxidative stress and ER stress."*
+* **[-] Inhibiting Claim (PMID 41690118):** *"Below a critical damage threshold, robust autophagic flux suppresses senescence initiation by maintaining mitochondrial integrity, limiting oxidative stress, and preserving proteostasis."*
+
+---
+
+## Stability & Validation
+
+* **Subsampling Stability:** Evaluated on a 50% bootstrap subsample ($N=150$ abstracts).
+  * Global degree rank correlation: **Spearman $\rho = 0.803$ ($p = 3.41 \times 10^{-47}$)**.
+  * Top-10 Hub Jaccard overlap: **66.7%**.
+  * Primary contested edge (`autophagy` $\leftrightarrow$ `senescence`) remained robustly contested.
+* **Threshold Sensitivity:** Comparing thresholds ($\ge 2$ papers: 156 contested across 2,127 edges vs $\ge 3$ papers: 119 contested across 745 edges) demonstrates that contested relationships concentrate within well-evidenced hubs rather than sparse noise.
+
+---
+
+## Methodological Limitations
+
+1. **Query-Driven Hub Dominance:** The central prominence of `senescence` and `autophagy` is an artifact of the PubMed query string (`"autophagy AND senescence"`), not an emergent biological discovery.
+2. **Corpus Scale & Lower-Rank Instability:** While ranks 1–2 are stable, ranks 3–10 shuffle under 50% subsampling due to the moderate corpus size (295 abstracts).
+3. **Cross-Project Scale Mismatch:** Strict intersection between Project A's top 200 concordant genes and Project B's graph yielded 0 direct matches ($N=0$). This reflects a vocabulary resolution difference: clinical microarrays measure specific downstream transcriptomic effectors (`CNN1`, `FMO1`, `HAS2`), whereas abstract-level literature predominantly describes master regulatory complexes (`mTOR`, `SASP`, `p53`).
+4. **Relational Scope:** Keyword and span-based scoping serves as a fast relational heuristic; dependency parsing would be required for strict subject-verb-object syntactical attribution.
+
+---
+
+## Repository Structure
+project-b-knowledge-graph/
+│
+├── src/
+│   ├── pubmed_fetch.py              # Entrez API fetcher
+│   ├── extract_entities.py          # SciSpacy NER + vocabulary cleaner
+│   ├── build_graph.py               # NetworkX graph builder + scoped classifier
+│   ├── contested_analysis.py        # Top disputes & citation extraction
+│   ├── cross_project_connect.py     # Non-circular Project A/B intersection
+│   ├── evaluate_graph_robustness.py # 50% subsampling stability evaluation
+│   └── visualise_graph.py           # PyVis interactive HTML renderer
+│
+├── tests/
+│   └── test_project_b.py            # Unit tests (NER, scoping, graph logic)
+│
+├── figures/
+│   └── knowledge_graph.html         # Standalone interactive network visual
+│
+├── data/                            # Raw data (.gitignore managed)
+│   ├── pubmed_autophagy_senescence.json
+│   ├── extracted_entity_pairs.json
+│   └── cross_project_convergent_targets.csv
+│
+└── README.md
+
+---
+
+## Execution Guide
+
+```bash
+# 1. Fetch PubMed abstracts
+py project-b-knowledge-graph/src/pubmed_fetch.py
+
+# 2. Extract entities and sentence co-occurrences
+py project-b-knowledge-graph/src/extract_entities.py
+
+# 3. Construct knowledge graph & classify edges
+py project-b-knowledge-graph/src/build_graph.py
+
+# 4. Extract contested literature interactions
+py project-b-knowledge-graph/src/contested_analysis.py
+
+# 5. Evaluate graph stability (50% subsample)
+py project-b-knowledge-graph/src/evaluate_graph_robustness.py
+
+# 6. Run non-circular cross-project alignment
+py project-b-knowledge-graph/src/cross_project_connect.py
+
+# 7. Generate interactive visualization
+py project-b-knowledge-graph/src/visualise_graph.py
+
+# 8. Run unit test suite
+pytest project-b-knowledge-graph/tests/test_project_b.py
