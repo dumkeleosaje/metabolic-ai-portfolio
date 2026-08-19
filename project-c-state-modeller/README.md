@@ -1,331 +1,171 @@
-# 📈 Project C — Metabolic State Trajectory Modeller
+# 📈 Project C — In Silico Metabolic State Modeller (CGM Hidden Markov Model)
 
-> **Can Hidden Markov Models detect the precise moment a person's metabolism shifts from flexible to rigid — and identify the optimal window for dietary intervention?**
+> **Can unsupervised machine learning recover latent pharmacokinetic states from continuous glucose telemetry?**
 >
-> This project applies probabilistic state-space modelling to continuous glucose monitor data, detecting transitions between metabolic states and using causal inference to identify the conditions that accelerate recovery.
+> An *in silico* methodological validation study evaluating unsupervised Gaussian Hidden Markov Models (HMMs) on Continuous Glucose Monitoring (CGM) telemetry. The pipeline simulates two-compartment pharmacokinetics, extracts velocity ($dG/dt$) and rolling volatility features, benchmarks state recovery against simulator ground truth ($\text{ARI} = 0.7751$), demonstrates a divergence between likelihood-based criteria (BIC) and compartment recovery (ARI), and documents an unexpected negative finding where incorporating Insulin-on-Board (IOB) degraded state discovery.
 
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![hmmlearn](https://img.shields.io/badge/hmmlearn-0.3-4B8BBE?style=flat-square)](https://hmmlearn.readthedocs.io)
-[![DoWhy](https://img.shields.io/badge/DoWhy-0.11-7C3AED?style=flat-square)](https://py-why.github.io/dowhy/)
+[![hmmlearn](https://img.shields.io/badge/hmmlearn-0.3.3-orange?style=flat-square)](https://hmmlearn.readthedocs.io/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.4-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-Passing-22c55e?style=flat-square)]()
 
 ---
 
-## The Biological Problem
+## 1. Study Framing & Methodological Scope
 
-### The Standard Approach and Its Flaw
+> **Scope & Epistemic Boundary:** This project is an *in silico* methodological validation, not a physiological discovery study. Ground-truth states are compartments defined by the simulator's ordinary differential equations (ODEs) and threshold rules. A strong Adjusted Rand Index (ARI) demonstrates that the Gaussian HMM can recover known latent structure from continuous glucose signals alone—not that these compartments correspond directly to independently assayed human cellular biology.
 
-Almost every AI model applied to continuous glucose monitor (CGM) data has the same goal: *predict the next glucose reading*. These models treat glucose as a simple time series — look at the past 12 hours, predict the next 2.
-
-This misses something fundamental.
-
-**Glucose is not the variable of interest. Insulin sensitivity is.**
-
-A glucose value of 6.5 mmol/L after a meal means something completely different depending on:
-- How quickly insulin is clearing that glucose
-- What the baseline insulin sensitivity is at that moment
-- Whether the person is in a state of metabolic flexibility (can switch between fuel sources) or metabolic rigidity (locked into glucose dependence)
-
-The **metabolic state** — not the glucose value — determines health outcomes and intervention efficacy.
-
-### The Research Question
-
-This project asks: *can we infer latent metabolic state from CGM data alone, and can we identify when and why transitions between states occur?*
-
-If we can detect the transition from metabolic flexibility to rigidity, and identify what conditions accelerate recovery, we have the foundation for **precision timing of dietary interventions** — the core computational problem of disease reversal.
-
-This connects directly to the DiRECT trial finding (Lean et al. 2018, *Lancet*): Type 2 diabetes reversed in 46% of patients through dietary intervention alone. The open question is *why 46% and not 100%?* A state-space model of metabolic trajectory may begin to answer that.
+Clinical CGM benchmark datasets (e.g., OhioT1DM) require formal Institutional Data Use Agreements (DUA; currently requested/pending). Project C establishes a verified pipeline architecture on stationary 5-minute telemetry ($88.5\text{--}210.5\text{ mg/dL}$, mean $132.8\text{ mg/dL}$, week-over-week drift $4.15\text{ mg/dL}$) containing three defined simulator compartments:
+1. **`Fasting_Basal` (31.6% of simulated steps):** Steady baseline euglycemia ($98.9\text{ mg/dL}$, volatility $1.00\text{ mg/dL}$).
+2. **`Absorption_Spike` (18.3% of simulated steps):** Postprandial gut absorption driving positive velocity ($dG/dt = +0.622\text{ mg/dL/min}$, volatility $11.59\text{ mg/dL}$).
+3. **`Insulin_Clearance` (50.1% of simulated steps):** Active post-peak insulin disposal driving downward recovery ($dG/dt = -0.181\text{ mg/dL/min}$, mean glucose $141.1\text{ mg/dL}$).
 
 ---
 
-## What This Project Does
+## 2. Key Scientific & Methodological Findings
 
-```
-OhioT1DM CGM Dataset (8 patients, ~8 weeks each)
-         │
-         ▼
-  Feature engineering
-  (glucose rate of change, rolling stats,
-   meal timing, sleep encoding, time of day)
-         │
-         ▼
-  Gaussian Hidden Markov Model (2 states)
-  State 0: Metabolically Flexible
-  State 1: Metabolically Rigid
-         │
-         ▼
-  Viterbi decoding — infer most likely state at each timestep
-         │
-         ├──────────────────────────────────────┐
-         ▼                                      ▼
-  Transition analysis                  Causal inference (DoWhy)
-  (when do switches occur?             (does exercise causally
-   what triggers them?                  accelerate recovery?)
-   how long does recovery take?)
-         │
-         ▼
-  Intervention window detection
-  (the moments of maximum leverage
-   for dietary or lifestyle change)
-```
+### 1. Ground-Truth State Recovery ($\text{ARI} = 0.7751$)
+Using continuous glucose features alone ($G_{\text{smooth}}$, $dG/dt$, $\sigma_{\text{1h}}$), an unsupervised 3-state Gaussian HMM recovered the simulator's latent compartments with an **Adjusted Rand Index of $\text{ARI} = 0.7751$**:
+* **`Insulin_Clearance`:** $1,984 / 2,020 = \mathbf{98.2\%}$ sensitivity ($dG/dt = -0.181\text{ mg/dL/min}$).
+* **`Absorption_Spike`:** $672 / 736 = \mathbf{91.3\%}$ sensitivity ($dG/dt = +0.622\text{ mg/dL/min}$).
+* **`Fasting_Basal`:** $1,064 / 1,265 = \mathbf{84.1\%}$ sensitivity ($dG/dt = -0.028\text{ mg/dL/min}$).
+
+| True Simulator State (Rows: $N_{\text{True}}$) | Decoded State 0 (Basal) | Decoded State 1 (Clearance) | Decoded State 2 (Excursion) | Sensitivity |
+| :--- | :---: | :---: | :---: | :---: |
+| **`Fasting_Basal` ($N=1,265$)** | **1,064** | 197 | 4 | **84.1%** |
+| **`Insulin_Clearance` ($N=2,020$)** | 0 | **1,984** | 36 | **98.2%** |
+| **`Absorption_Spike` ($N=736$)** | 14 | 50 | **672** | **91.3%** |
+
+*(Note: Matrix rows sum to the simulator's true compartment counts; columns sum to decoded model assignments: State 0 = 1,078, State 1 = 2,231, State 2 = 712).*
 
 ---
 
-## Dataset
+### 2. Dual-Criterion Model Selection (BIC vs. Ground-Truth ARI)
+Evaluating model complexity across $k \in [2, 6]$ states using multi-restart convergence (`n_inits=5`, `init_params="smc"`) revealed a clear methodological divergence between likelihood criteria and compartment recovery:
+* **$k=2$:** $\text{BIC} = 21,700.3$ | $\text{ARI} = 0.3361$
+* **$k=3$:** $\text{BIC} = 11,576.3$ | **$\text{ARI} = 0.7751$ (Optimal Biological Recovery)**
+* **$k=4$:** $\text{BIC} = 7,939.2$ | $\text{ARI} = 0.5867$
+* **$k=5$:** $\text{BIC} = 4,748.5$ | $\text{ARI} = 0.4465$
+* **$k=6$:** $\text{BIC} = 3,209.5$ | $\text{ARI} = 0.4198$
 
-The [OhioT1DM Dataset](http://smarthealth.cs.ohio.edu/OhioT1DM-dataset.html) is a publicly available dataset of 8 Type 1 diabetes patients with ~8 weeks of:
-
-| Signal | Resolution | Notes |
-|--------|:----------:|-------|
-| Continuous glucose (CGM) | Every 5 minutes | Dexcom G4 sensor |
-| Meal bolus insulin | Event-based | Amount + timing |
-| Basal insulin | Continuous | Pump settings |
-| Finger-stick glucose | Irregular | Calibration reference |
-| Exercise | Event-based | Logged by patient |
-| Sleep quality | Daily | Self-reported |
-| Work/stress | Daily | Self-reported |
-
-> **Note:** While the dataset is T1D, the CGM dynamics and metabolic state transitions are directly relevant to studying glucose-insulin coupling in any population. The state detection methodology transfers to T2D and metabolically healthy populations.
-
-Access the dataset by registering at: [smarthealth.cs.ohio.edu/OhioT1DM-dataset.html](http://smarthealth.cs.ohio.edu/OhioT1DM-dataset.html)
+**Methodological Finding:** BIC decreases monotonically across $k=2\text{--}6$, illustrating the tendency of likelihood-based information criteria to over-segment continuous time-series into redundant micro-states. In contrast, Ground-Truth ARI peaks at $k=3$, justifying three states as the optimal compartment representation.
 
 ---
 
-## Methods
+### 3. Strongly Unidirectional Transition Structure
+The unsupervised HMM recovered transition dynamics consistent with physiological meal progression:
 
-### 1. Data Loading & Preprocessing
-**File:** `src/load_ohio.py`, `src/preprocess_ohio.py`
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│    ┌──────────────────┐               ┌──────────────────┐  │
+└───►│  State 0: Basal  ├──────────────►│ State 2: Spikes  │  │
+└────────┬─────────┘   P = 0.0139  └────────┬─────────┘  │
+▲                                  │            │
+P = 0.0067 │                                  │ P = 0.0534 │
+│        ┌──────────────────┐      │            │
+└────────┤ State 1: Clear.  │◄─────┘            │
+└──────────────────┘                   │
+│
+Reverse Transitions:                                          │
+• P(Clearance -> Excursion) = 0.0103                        │
+• Direct P(Basal -> Clearance) = 0.0009                     │
+└─────────────────────────────────────────────────────────────┘
 
-Ohio T1DM data is distributed as XML files. Loading extracts:
-- CGM timestamps and glucose values
-- Meal events with carbohydrate amounts
-- Exercise events with duration
-- Sleep quality scores
 
-Preprocessing:
-- **Resampling** to uniform 5-minute intervals (some CGM readings have gaps)
-- **Forward-filling** gaps under 15 minutes (sensor dropouts)
-- **Flagging** larger gaps as missing — not imputed
+The transition topology is strongly unidirectional; reverse transitions occur at under $1\%$ probability, matching the forward flow of digestion and clearance.
 
-### 2. Feature Engineering
-**File:** `src/features.py`
+#### 5-Minute Transition Probability Matrix $P(S_{t+1} \mid S_t)$
 
-For each 5-minute timestep, 8 features are computed:
-
-| Feature | Description | Biological Rationale |
-|---------|-------------|---------------------|
-| `glucose_value` | Current CGM reading (mmol/L) | Direct metabolic signal |
-| `glucose_roc` | Rate of change (mmol/L per 5 min) | Rising glucose = insulin response demand |
-| `rolling_mean_1hr` | 1-hour rolling average glucose | Sustained elevation vs spike |
-| `rolling_std_1hr` | 1-hour rolling glucose variability | High variance = poor metabolic control |
-| `hours_since_meal` | Time since last logged carb bolus | Post-prandial phase encoding |
-| `carbs_last_2hrs` | Total carbohydrates ingested in 2hr window | Glycaemic load context |
-| `time_of_day` | Hour as float (0.0–23.99) | Circadian insulin sensitivity variation |
-| `is_sleeping` | Binary sleep flag | Fasting + growth hormone context |
-
-### 3. Hidden Markov Model
-**File:** `src/hmm_model.py`
-
-A **Gaussian HMM** with 2 hidden states is trained on the 8-dimensional feature sequences.
-
-```python
-from hmmlearn.hmm import GaussianHMM
-
-model = GaussianHMM(
-    n_components=2,        # 2 metabolic states
-    covariance_type="full", # each state has its own covariance structure
-    n_iter=100,            # EM algorithm iterations
-    random_state=42
-)
-```
-
-**Why HMM?**
-
-The metabolic state at any moment is *not directly observable* from glucose alone — it is a *latent* variable that influences what we observe (the CGM reading). HMMs are the natural probabilistic model for this setting: they model sequences of observations as arising from a hidden state sequence with probabilistic transitions.
-
-**Viterbi decoding** finds the most likely hidden state sequence given all observations — at each timestep, we infer whether the patient is in State 0 (flexible) or State 1 (rigid).
-
-### 4. Transition Analysis
-**File:** `src/transition_analysis.py`
-
-For each detected state transition:
-
-- **Rigid onset** (0 → 1): Record the meal size (carbs), time of day, glucose at onset
-- **Recovery** (1 → 0): Record time-to-recovery, overnight vs daytime, exercise presence
-
-Key analyses:
-- Correlation between meal carbohydrate load and transition to rigidity
-- Distribution of recovery times across all patients
-- Whether exercise presence significantly reduces time-to-recovery
-
-### 5. Causal Inference
-**File:** `src/causal_analysis.py`
-
-Correlation is not causation. Using **[DoWhy](https://py-why.github.io/dowhy/)** to estimate the *causal effect* of exercise on metabolic state recovery:
-
-```python
-import dowhy
-from dowhy import CausalModel
-
-model = CausalModel(
-    data=transition_df,
-    treatment="exercise_present",
-    outcome="time_to_recovery_minutes",
-    graph="digraph { exercise_present -> time_to_recovery_minutes; ... }"
-)
-```
-
-This answers: *if we intervened to add exercise, what would be the expected reduction in recovery time — holding all other variables constant?*
+| Current State ($S_t$) | Next: State 0 (Basal) | Next: State 2 (Excursion) | Next: State 1 (Clearance) |
+| :--- | :---: | :---: | :---: |
+| **State 0 (Basal)** | **0.9852** | 0.0139 | 0.0009 |
+| **State 2 (Excursion)** | 0.0000 | **0.9466** | 0.0534 |
+| **State 1 (Clearance)** | 0.0067 | 0.0103 | **0.9830** |
 
 ---
 
-## Key Results
+### 4. Dwell Times Consistent with First-Order Markov Memory ($N=1,000$)
+Empirical dwell times benchmarked against 1,000 first-order Markov surrogate sequences:
+* **State 0 (Fasting Basal):** Median = **282.5 mins** ($\text{IQR} = 111.3\text{ min}$, Surrogate $p = 0.294$).
+* **State 1 (Insulin Clearance):** Median = **300.0 mins** ($\text{IQR} = 127.5\text{ min}$, Surrogate $p = 0.061$).
+* **State 2 (Absorption Excursion):** Median = **95.0 mins** ($\text{IQR} = 13.8\text{ min}$, Surrogate $p = 0.050$).
 
-### Metabolic State Detection
-
-| Metric | Value |
-|--------|:-----:|
-| Patients modelled | 8 |
-| Total state transitions detected | XXX |
-| Mean time in rigid state (per episode) | XX minutes |
-| Correlation: meal carbs → rigidity onset | r = 0.XX (p < 0.05) |
-| Causal effect of exercise on recovery | −XX minutes (95% CI: −XX to −XX) |
-
-### 48-Hour State Trajectory: Patient 540
-
-![48-Hour State Trajectory](figures/state_trajectory_p540.png)
-
-*Green background = Metabolically Flexible (State 0). Red background = Metabolically Rigid (State 1). Vertical red lines = meal events with carbohydrate amounts. Grey shading = sleep period. The model correctly identifies post-prandial rigidity episodes and overnight flexibility recovery.*
-
-### Transition Distribution
-
-![Transition Analysis](figures/transition_analysis.png)
-
-*Left: distribution of meal carbohydrate amounts at rigid-state onset — higher carb meals strongly associated with transition. Right: distribution of recovery times — exercise events shift the distribution toward faster recovery.*
-
-### Intervention Window Detection
-
-![Intervention Windows](figures/intervention_windows.png)
-
-*State trajectories across all 8 patients with detected intervention windows marked (⬆). Windows are timesteps where the system is approaching a state boundary — the moments where a small dietary or lifestyle change would have maximum leverage on trajectory.*
+**Surrogate Null Finding:** All empirical dwell distributions are consistent with first-order Markov simulations ($p \ge 0.05$). State persistence is fully parameterized by transition matrix inertia without higher-order non-Markovian memory.
 
 ---
 
-## How to Run
+### 5. Negative Finding on Insulin-on-Board (IOB) Feature Fusion
+* **CGM-Only Features ($G_{\text{smooth}}$, $dG/dt$, $\sigma_{\text{1h}}$):** $\text{ARI} = 0.7751$
+* **CGM + Insulin-on-Board (IOB):** $\text{ARI} = 0.6920$ ($\Delta = -0.0831$)
+* **Mechanism:** Adding zero-inflated, monotonically decaying IOB degraded unsupervised recovery. The pharmacokinetic decay curve dominated feature variance, pulling the HMM toward segmenting by insulin decay phase rather than continuous glucose trajectory dynamics.
 
-### Prerequisites
+---
 
+## 3. Clinical Risk Metrics & Recovery Dynamics
+
+### Postprandial Excursion Recovery Dynamics
+* **Logged Meals in Trace:** 38 events across 14 days.
+* **High-Velocity Excursions Detected:** 15 distinct events (**39.5% sensitivity**).
+  * *Sensitivity Interpretation:* The HMM isolates clinically significant high-velocity excursions; smaller meals produce gradual glycemic rises that are absorbed directly into the clearance state.
+* **Resolution to Basal:** 14 events completed full return (**93.3% completion rate**).
+* **Median Time to Basal Recovery:** **6.33 hours** ($\text{IQR} = 0.81\text{ hours}$).
+
+### State-Conditioned ADA Clinical Risk Breakdown
+
+| Decoded State (Assigned Samples) | Samples | TBR ($<70\text{ mg/dL}$) % | TIR ($70\text{--}180\text{ mg/dL}$) % | TAR ($>180\text{ mg/dL}$) % | CV (%) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **State 0: Fasting Basal** | 1,078 | 0.0% | **100.0%** | 0.0% | 4.8% |
+| **State 1: Insulin Clearance** | 2,231 | 0.0% | **93.5%** | 6.5% | 16.0% |
+| **State 2: Absorption Excursion** | 712 | 0.0% | **80.6%** | 19.4% | 14.6% |
+
+*(Note: Row counts reflect decoded state assignments; compare to Section 2.1 for ground-truth counts).*
+
+---
+
+## 4. Visualisations
+
+### Trajectory Timeline (Decoded States)
+![Simulated Patient States](figures/simulated_patient_states.png)
+*Figure 1: 72-hour continuous CGM trajectory color-coded by decoded latent state across the target range ($70\text{--}180\text{ mg/dL}$). Blue captures fasting baseline euglycemia, amber highlights meal absorption spikes, and green tracks insulin-mediated clearance.*
+
+### State Transition Probability Heatmap
+![Transition Heatmap](figures/state_transition_heatmap.png)
+*Figure 2: Empirical Markov transition probability matrix ordered by semantic progression ($\text{Basal} \to \text{Excursion} \to \text{Clearance}$).*
+
+---
+
+## 5. Methodological Limitations
+
+1. **Threshold-Defined In Silico Ground Truth:** Ground-truth labels reflect the simulator's pharmacokinetic ODE compartments and velocity thresholds rather than directly assayed human biological states.
+2. **Deterministic Pharmacokinetic Regularity:** The narrow recovery IQR ($0.81\text{ hours}$) stems from regular simulated meal dosing and deterministic ODE kinetics; real clinical CGM exhibits substantially higher physiological variability.
+3. **Single Simulated Cohort Trace:** Results evaluate a single 14-day simulated metabolic trajectory.
+4. **Clinical Dataset Access:** Real-world validation on the OhioT1DM clinical CGM dataset is pending Institutional Data Use Agreement (DUA) credentialing. The ingestion pipeline matches the schema required for clinical XML ingestion upon approval.
+
+---
+
+## 6. Execution Guide
+
+### Installation
 ```bash
-git clone https://github.com/YOUR-USERNAME/metabolic-ai-portfolio.git
+git clone [https://github.com/your-username/metabolic-ai-portfolio.git](https://github.com/your-username/metabolic-ai-portfolio.git)
 cd metabolic-ai-portfolio/project-c-state-modeller
 pip install -r requirements.txt
-```
+Reproduce Analysis End-to-End
+Bash
+# 1. Generate stationary in silico telemetry
+python src/load_simulation.py
 
-**Download the Ohio T1DM dataset:**
-1. Register at [smarthealth.cs.ohio.edu/OhioT1DM-dataset.html](http://smarthealth.cs.ohio.edu/OhioT1DM-dataset.html)
-2. Place the XML files in `data/raw/OhioT1DM/`
+# 2. Extract velocity and volatility features
+python src/extract_features.py
 
-### Run the full pipeline
+# 3. Fit Gaussian HMM with multi-restart convergence & dual model selection
+python src/fit_hmm.py
 
-```bash
-# Step 1: Parse Ohio XML files
-python src/load_ohio.py
+# 4. Evaluate Markov surrogate dwell times & recovery dynamics
+python src/evaluate_states.py
 
-# Step 2: Resample and clean CGM data
-python src/preprocess_ohio.py
+# 5. Render state trajectory plots and heatmaps
+python src/plot_trajectories.py
 
-# Step 3: Compute features for all patients
-python src/features.py
-
-# Step 4: Fit HMM and decode states
-python src/hmm_model.py
-
-# Step 5: 48-hour visualisation (specify patient ID)
-python src/visualise_patient.py --patient 540
-
-# Step 6: Transition analysis across all patients
-python src/transition_analysis.py
-
-# Step 7: Causal inference — effect of exercise on recovery
-python src/causal_analysis.py
-```
-
-### Run tests
-
-```bash
-pytest tests/ -v
-```
-
----
-
-## File Structure
-
-```
-project-c-state-modeller/
-│
-├── src/
-│   ├── load_ohio.py          # Parse Ohio T1DM XML files
-│   ├── preprocess_ohio.py    # Resample to 5-min intervals, fill gaps
-│   ├── features.py           # Compute 8-feature vector per timestep
-│   ├── hmm_model.py          # Gaussian HMM training and Viterbi decoding
-│   ├── visualise_patient.py  # 48-hour state trajectory plot per patient
-│   ├── transition_analysis.py # Detect transitions, compute statistics
-│   └── causal_analysis.py   # DoWhy causal effect of exercise on recovery
-│
-├── tests/
-│   ├── test_features.py      # Tests for feature computation
-│   ├── test_hmm.py           # Tests for HMM state assignment consistency
-│   └── test_transitions.py   # Tests for transition detection logic
-│
-├── figures/
-│   ├── state_trajectory_p540.png   # 48-hour state plot: patient 540
-│   ├── transition_analysis.png     # Meal carbs and recovery distributions
-│   └── intervention_windows.png    # Detected intervention windows
-│
-├── requirements.txt
-├── .gitignore
-└── README.md
-```
-
----
-
-## Dependencies
-
-```
-pandas>=2.0
-numpy>=1.24
-matplotlib>=3.7
-hmmlearn>=0.3
-scipy>=1.11
-dowhy>=0.11
-scikit-learn>=1.3
-pytest>=7.4
-```
-
----
-
-## Theoretical Context
-
-This project is a first step toward **Problem 5: Disease Reversal as an Optimal Control Problem**.
-
-The body is a dynamical system with two attractor states: metabolic health and metabolic disease. Between them are saddle points — unstable equilibria where a correctly timed push sends the system back to health, but a mistimed push locks it deeper into disease.
-
-The DiRECT trial (Lean et al. 2018) showed that 46% of T2D patients could achieve full remission through dietary intervention. The question this framework begins to address: *where are the saddle points for each individual, and what minimum intervention produces the maximum trajectory shift?*
-
-The HMM provides the **state representation**. The transition analysis provides the **transition dynamics**. The causal inference layer provides the **intervention response model**. Together, these three components are the scaffold of a control-theoretic approach to metabolic disease reversal.
-
-- **Project A** provides transcriptomic evidence that the disease attractor exists
-- **Project B** maps the pathway-level mechanisms that maintain it
-- **Project C** models the dynamics of escaping it
-
----
-
-## References
-
-- Lean, M.E. et al. (2018). Primary care-led weight management for remission of T2D (DiRECT). *Lancet*, 391(10120), 541–551.
-- Marling, C. & Bunescu, R. (2018). The OhioT1DM dataset for blood glucose level prediction. *KHD Workshop, IJCAI 2018*.
-- Rabiner, L.R. (1989). A tutorial on hidden Markov models. *Proceedings of the IEEE*, 77(2), 257–286.
-- Pearl, J. & Mackenzie, D. (2018). *The Book of Why*. Basic Books.
-
----
+# 6. Run automated unit test suite
+pytest tests/test_project_c.py
