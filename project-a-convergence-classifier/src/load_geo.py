@@ -2,38 +2,27 @@ import pandas as pd
 import numpy as np
 
 def parse_metadata(file_path, target_keyword="glycemiagroup"):
-
-    #CREATE an empty list for sample IDs
     sample_ids = []
-    #CREATE an empty list for disease labels
     disease_labels = []
 
-    #open the file for reading using a with block for automatic closing with utf-8 encoding guard
     with open(file_path, "r", encoding="utf-8", errors="ignore") as file:
         lines = file.readlines()
 
-    #FOR each line in the file:
     for line in lines:
-        
-        #stop if we hit the data table (Fixed bug: added missing '!')
         if line.startswith("!series_matrix_table_begin"):
             break 
 
-        #IF the line does not start with "!":
         if not line.startswith("!"):
             continue
-            #SKIP it (we only want metadata in this pass)
 
-        #IF the line starts with the sample-accession marker:
         if line.startswith("!Sample_geo_accession"):    
-            #SPLIT the line on tabs
             parts = line.split("\t")
             raw_ids = parts[1:]
             for item in raw_ids:
                 clean_ids = item.strip().strip('"').strip()
                 sample_ids.append(clean_ids)
 
-        # Handle GSE10946 title-based parsing (PCOS vs nonPCOS in !Sample_title)
+        # Handle GSE10946 title-based parsing
         if (target_keyword.lower() in ["title", "pcos"]) and line.startswith("!Sample_title"):
             parts = line.split("\t")[1:]
             for item in parts:
@@ -45,36 +34,38 @@ def parse_metadata(file_path, target_keyword="glycemiagroup"):
                 else:
                     disease_labels.append(clean_item)
 
-        #IF the line starts with the sample-characteristics marker:
-        elif line.startswith("!Sample_characteristics_ch1") and target_keyword.lower() in line.lower():
-            parts = line.split("\t") #split by tabs
-            raw_labels = parts[1:]
+        # Exact key matching before colon for characteristics
+        elif line.startswith("!Sample_characteristics_ch1"):
+            parts = line.split("\t")[1:]
             
-            for item in raw_labels:
-                clean_item = item.strip().strip('"').strip()
-                
-                # Handle comma-separated single lines (e.g. GSE10946)
-                if "," in clean_item and target_keyword.lower() in clean_item.lower():
-                    sub_parts = clean_item.split(",")
-                    found_val = clean_item
-                    for sp in sub_parts:
-                        if target_keyword.lower() in sp.lower():
-                            found_val = sp.strip()
-                            break
-                    clean_item = found_val
+            # Check first element to see if key matches target_keyword exactly
+            first_item = parts[0].strip().strip('"').strip()
+            key_part = first_item.split(":")[0].strip().lower() if ":" in first_item else first_item.lower()
+            
+            if key_part == target_keyword.lower():
+                for item in parts:
+                    clean_item = item.strip().strip('"').strip()
+                    
+                    if "," in clean_item and target_keyword.lower() in clean_item.lower():
+                        sub_parts = clean_item.split(",")
+                        found_val = clean_item
+                        for sp in sub_parts:
+                            sp_key = sp.split(":")[0].strip().lower() if ":" in sp else sp.strip().lower()
+                            if sp_key == target_keyword.lower():
+                                found_val = sp.strip()
+                                break
+                        clean_item = found_val
 
-                if ":" in clean_item:
-                    label_value = clean_item.split(":")[-1].strip()
-                else:
-                    label_value = clean_item
+                    if ":" in clean_item:
+                        label_value = clean_item.split(":")[-1].strip()
+                    else:
+                        label_value = clean_item
 
-                disease_labels.append(label_value)
+                    disease_labels.append(label_value)
 
-    #CHECK that sample IDs and disease labels have the same length
     if len(sample_ids) != len(disease_labels):
         raise ValueError(f"Error: Number of sample IDs ({len(sample_ids)}) does not match number of disease labels ({len(disease_labels)}) for keyword '{target_keyword}'")
 
-    # Guard against single-class constant label assignment
     unique_labels = set(disease_labels)
     if len(unique_labels) <= 1:
         raise ValueError(

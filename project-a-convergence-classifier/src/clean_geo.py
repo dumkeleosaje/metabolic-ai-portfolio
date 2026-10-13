@@ -76,6 +76,38 @@ def clean_expression_matrix(df_matrix, control_prefix="AFFX-", prelog_threshold=
     print("=== DATA CLEANING PIPELINE COMPLETE ===\n")
     return df_out
 
+def standardise_per_gene(df_genes, step_label="Gene Standardisation"):
+    """
+    Standardises each gene (row) across all samples (columns) to Mean=0 and Std=1.
+    Preserves relative within-cohort variation while removing baseline organ-level magnitude differences.
+    Input shape: (Genes x Samples)
+    Output shape: (Genes x Samples)
+    """
+    print(f"[{step_label}] Starting Per-Gene Standardisation...")
+    
+    # Calculate per-gene mean and standard deviation across samples (axis=1)
+    gene_means = df_genes.mean(axis=1)
+    gene_stds = df_genes.std(axis=1, ddof=0)
+    
+    # Avoid division by zero for unvarying/constant genes
+    gene_stds_safe = np.where(gene_stds == 0, 1.0, gene_stds)
+    
+    # Subtract mean across rows and divide by std
+    df_std = df_genes.sub(gene_means, axis=0).div(gene_stds_safe, axis=0)
+    
+    # Verification assertion
+    final_means = df_std.mean(axis=1).values
+    final_stds = df_std.std(axis=1, ddof=0).values
+    
+    mean_check = np.allclose(final_means, 0, atol=1e-5)
+    std_check = np.allclose(final_stds, 1, atol=1e-5)
+    
+    if mean_check and std_check:
+        print(f"  [TEST PASSED] Verified: All per-gene means ≈ 0 and stds ≈ 1. Shape: {df_std.shape}")
+    else:
+        print(f"  [WARNING] Per-gene standardisation verification failed! Max mean error: {np.max(np.abs(final_means))}")
+        
+    return df_std
 
 if __name__ == "__main__":
     test_file_path = "project-a-convergence-classifier/data/GSE18732_series_matrix.txt"

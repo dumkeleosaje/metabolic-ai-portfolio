@@ -64,9 +64,13 @@ def aggregate_gpl_to_gene(df_matrix, gpl_file_path, probe_col="ID"):
     return df_gene_level
 
 
-def align_three_datasets(paths_dict, biomart_path, gpl570_path, gpl14951_path):
-    """Load 3 GEO datasets, aggregate to HGNC symbols, intersect feature spaces, and standardise."""
+def align_three_datasets(paths_dict, biomart_path, gpl570_path, gpl14951_path, standardise=True):
+    """
+    Load 3 GEO datasets, aggregate to HGNC symbols, intersect feature spaces, and standardise.
     
+    If standardise=True: Applies per-sample z-scoring on the aligned matrix.
+    If standardise=False: Returns raw log2 gene-level expression matrices without per-sample scaling.
+    """
     print("=== PHASE 1: INDIVIDUAL PREPROCESSING & AGGREGATION ===")
 
     # 1. GSE18732 (Muscle - ENST Custom CDF)
@@ -116,10 +120,15 @@ def align_three_datasets(paths_dict, biomart_path, gpl570_path, gpl14951_path):
         # Subset rows strictly to the 3-way gene intersection
         df_subset = df.loc[shared_genes].copy()
         
-        # Standardise per-sample ON THE ALIGNED FEATURE SPACE
-        df_std = standardise_per_sample(df_subset, step_label=f"{name} Standardisation")
-        aligned_matrices[name] = df_std
-        print(f"  {name} final shape: {df_std.shape} (Genes x Patients)")
+        if standardise:
+            # Standardise per-sample ON THE ALIGNED FEATURE SPACE
+            df_out = standardise_per_sample(df_subset, step_label=f"{name} Standardisation")
+        else:
+            print(f"[{name}] Standardisation skipped (Returning raw log2 aligned matrix).")
+            df_out = df_subset
+
+        aligned_matrices[name] = df_out
+        print(f"  {name} final shape: {df_out.shape} (Genes x Patients)")
 
     return aligned_matrices, labels_dict, shared_genes
 
